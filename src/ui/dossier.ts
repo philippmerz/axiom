@@ -27,15 +27,16 @@ export class DossierRenderer {
     if (this.tip) this.bindHover()
   }
 
-  /** Hover hit-test: show the nearest symbol's relation in plain language. */
+  /** Show the nearest symbol's relation in plain language. On a mouse this
+   * tracks hover; on touch a tap inspects and a tap on empty space dismisses. */
   private bindHover(): void {
     const tip = this.tip as HTMLElement
-    this.canvas.addEventListener('pointermove', (e) => {
+    const inspect = (clientX: number, clientY: number): void => {
       const r = this.canvas.getBoundingClientRect()
-      const mx = e.clientX - r.left
-      const my = e.clientY - r.top
+      const mx = clientX - r.left
+      const my = clientY - r.top
       let best: Hotspot | null = null
-      let bestD2 = 16 * 16
+      let bestD2 = 18 * 18
       for (const h of this.hotspots) {
         const d2 = (h.x - mx) ** 2 + (h.y - my) ** 2
         if (d2 < bestD2) {
@@ -51,8 +52,18 @@ export class DossierRenderer {
       tip.style.left = `${best.x}px`
       tip.style.top = `${best.y}px`
       tip.classList.remove('hidden')
+    }
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'touch') inspect(e.clientX, e.clientY)
     })
-    this.canvas.addEventListener('pointerleave', () => tip.classList.add('hidden'))
+    this.canvas.addEventListener('pointerdown', (e) => inspect(e.clientX, e.clientY))
+    this.canvas.addEventListener('pointerleave', (e) => {
+      if (e.pointerType !== 'touch') tip.classList.add('hidden')
+    })
+    // a touch elsewhere dismisses a tapped-open tooltip
+    window.addEventListener('pointerdown', (e) => {
+      if (e.target !== this.canvas) tip.classList.add('hidden')
+    })
   }
 
   resize(cssW: number): void {

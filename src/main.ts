@@ -100,13 +100,19 @@ function fresh(): void {
 
 function layout(): void {
   const wrap = el('field-wrap')
-  const size = Math.max(240, Math.min(wrap.clientWidth, wrap.clientHeight) - 34)
+  const mobile = window.matchMedia('(max-width: 820px)').matches
+  // mobile: field is a full-width square at the top of a scrolling page,
+  // capped so it never eats the whole viewport. desktop: fill the cell.
+  const size = mobile
+    ? Math.max(240, Math.min(window.innerWidth - 12, window.innerHeight * 0.62))
+    : Math.max(240, Math.min(wrap.clientWidth, wrap.clientHeight) - 34)
   field.resize(size)
   const dossierBlock = el('dossier')
   dossier.resize(Math.max(120, dossierBlock.clientWidth - 28))
 }
 
 window.addEventListener('resize', layout)
+window.addEventListener('orientationchange', () => setTimeout(layout, 100))
 
 window.addEventListener('hashchange', () => {
   const seed = hexToSeed(location.hash.slice(1))
@@ -149,3 +155,10 @@ function frame(now: number): void {
 
 void boot(hexToSeed(location.hash.slice(1)) ?? randomSeed())
 requestAnimationFrame(frame)
+
+// installable PWA — registered only in production so dev HMR isn't intercepted
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}

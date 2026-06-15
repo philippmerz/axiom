@@ -29,13 +29,24 @@ export class Panels {
   private readonly hudHint = el('hud-hint')
   private readonly overlay = el('overlay')
   private readonly overlayCard = el('overlay-card')
+  private readonly mobileSpecies = el('mobile-species')
+  private readonly mPause = el('m-pause')
+  private readonly mRepel = el('m-repel')
 
   private game!: Game
   private sparks: Array<{ canvas: HTMLCanvasElement; drawn: number }> = []
   private renderedSeq = -1 // highest log entry seq appended to the DOM
   private glyphColor = new Map<string, string>()
 
-  constructor(private readonly hooks: PanelHooks) {}
+  constructor(private readonly hooks: PanelHooks) {
+    // mobile bottom-bar controls (hidden on desktop via CSS)
+    this.mPause.addEventListener('click', () => this.game?.togglePause())
+    this.mRepel.addEventListener('click', () => {
+      if (this.game) this.game.repelMode = !this.game.repelMode
+    })
+    el('m-retry').addEventListener('click', this.hooks.onRetry)
+    el('m-new').addEventListener('click', this.hooks.onNew)
+  }
 
   bind(game: Game): void {
     this.game = game
@@ -51,6 +62,23 @@ export class Panels {
     this.glyphColor = new Map(game.species.map((s) => [s.glyph, s.color]))
     this.buildMarket()
     this.buildTools()
+    this.buildMobileSpecies()
+  }
+
+  /** Thumb-zone species selector for the mobile bottom bar (mirrors the
+   * market rows' select-on-tap; hidden on desktop). */
+  private buildMobileSpecies(): void {
+    this.mobileSpecies.innerHTML = ''
+    for (const s of this.game.species) {
+      const chip = document.createElement('button')
+      chip.className = 'm-swatch'
+      chip.dataset['species'] = String(s.id)
+      chip.innerHTML = `<span class="dot" style="background:${s.color}"></span><span style="color:${s.color}">${s.glyph}</span>`
+      chip.addEventListener('click', () => {
+        this.game.selected = s.id
+      })
+      this.mobileSpecies.appendChild(chip)
+    }
   }
 
   /** A "PROTOCOL [hex] LOAD" row — loading a seed reproduces the entire
@@ -147,6 +175,18 @@ export class Panels {
     this.updateLog()
     this.updateTools()
     this.updateHud()
+    this.updateMobile()
+  }
+
+  private updateMobile(): void {
+    const g = this.game
+    for (const chip of this.mobileSpecies.children) {
+      const el = chip as HTMLElement
+      el.classList.toggle('selected', Number(el.dataset['species']) === g.selected)
+    }
+    this.mPause.classList.toggle('active', g.phase === 'paused')
+    this.mPause.textContent = g.phase === 'paused' ? '▶ RESUME' : '❚❚ PAUSE'
+    this.mRepel.classList.toggle('active', g.repelMode)
   }
 
   private updateObjective(): void {

@@ -13,9 +13,22 @@ export function outcomeGlyph(outcome: ContactOutcome): string {
   }
 }
 
-/** Plain-words law description, used by log, dossier caption and scans. */
-export function describeRule(rule: Rule, species: Species[]): string {
-  const g = (s: number) => species[s]?.glyph ?? '?'
+/** A species is denoted by its colored dot, never a letter. In built strings
+ * it appears as this sentinel token (the id wrapped in U+0001 controls); the
+ * UI (speciesDots) swaps each token for an inline colored dot. The control
+ * char never occurs in normal text, so it won't collide with the digits in
+ * durations or counts. */
+export function speciesToken(id: number): string {
+  return `${id}`
+}
+
+/** Matches species tokens so the UI can replace them with colored dots. */
+export const SPECIES_TOKEN_RE = /(\d+)/g
+
+/** Plain-words law description, used by log, dossier caption and scans.
+ * Species appear as tokens that the UI renders as colored dots. */
+export function describeRule(rule: Rule, _species: Species[]): string {
+  const g = speciesToken
   switch (rule.kind) {
     case 'force': {
       const verb = rule.strength > 0 ? 'DRAWN TO' : 'REPELLED BY'

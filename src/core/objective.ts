@@ -126,12 +126,33 @@ export function generateObjective(
   const suppressCandidates = all.filter(
     (s) => mean(s) >= 8 && low(s) >= 3 && hasExternalInflow(ruleset, s),
   )
-  // depleting reactions only (consume/convert/merge): a co-deployed batch
-  // burns through itself, so hitting the count demands sustained engineering.
-  // Spawn reactions persist and would farm for free, so they're excluded.
+  // CATALYZE economic floor (mirrors AMPLIFY). Each reaction consumes a
+  // reactant that must be replenished, so the cheapest way to BUY a reaction
+  // is to keep buying the consumed species. The target sits above the natural
+  // rate plus what the budget can fund that way, so reaching it means herding
+  // the standing population, not buying reactants. Spawn reactions persist
+  // (farm for free) and are excluded.
+  const reactionCost = (c: ContactRule) => {
+    const o = c.outcome
+    const perDot = o.kind === 'merge' ? base(c.a) + base(c.b) : base(c.b) // consumed reactant(s)
+    return perDot * CONFIG.market.askPremium
+  }
+  const catBuyable = (c: ContactRule) => CONFIG.startCredits / reactionCost(c)
+  const CATALYZE_CEILING = 200
+  const catalyzeTarget = (c: ContactRule) => {
+    const fires = burnin.ruleFires[ruleId(c)] ?? 8
+    return Math.round(Math.max(fires * 2.2, fires + catBuyable(c) * 1.2, 24))
+  }
   const catalyzeCandidates = ruleset.contacts.filter((c) => {
     const fires = burnin.ruleFires[ruleId(c)] ?? 0
-    return c.outcome.kind !== 'spawn' && fires >= 8 && fires <= 120
+    // require the buy-proof target to fit under the reachable ceiling, else
+    // the rule is too cheap-and-busy to make fair — skip it
+    return (
+      c.outcome.kind !== 'spawn' &&
+      fires >= 8 &&
+      fires <= 120 &&
+      catalyzeTarget(c) <= CATALYZE_CEILING
+    )
   })
 
   const order = weightedKinds(rng)
@@ -144,17 +165,7 @@ export function generateObjective(
       primary = { kind, species: rng.pick(suppressCandidates) }
     } else if (kind === 'catalyze' && catalyzeCandidates.length > 0) {
       const rule = rng.pick(catalyzeCandidates)
-      // ruleFires is the measured full-horizon natural rate; demanding 1.8×
-      // means the reaction must be engineered, not waited for
-      const fires = burnin.ruleFires[ruleId(rule)] ?? 8
-      // 2.2× the natural rate, floor 24: the reaction must be driven well
-      // past what the world does on its own, and depleting reactants mean
-      // a one-shot co-deploy can't reach it
-      primary = {
-        kind,
-        ruleKey: ruleId(rule),
-        target: Math.min(200, Math.max(24, Math.round(fires * 2.2))),
-      }
+      primary = { kind, ruleKey: ruleId(rule), target: catalyzeTarget(rule) }
     } else if (kind === 'accumulate') {
       // target the bulk of naturally-extractable value so steady farming
       // alone falls short — the player must work a conversion arbitrage

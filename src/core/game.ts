@@ -55,6 +55,8 @@ export class Game {
   phase: Phase = 'briefing'
   tool: Tool = 'deploy'
   selected = 0
+  /** Touch fallback for shift-click: when set, ECHO places a flat repulsor. */
+  repelMode = false
   /** Field-space cursor, fed by input — the center of attention. */
   cursorX = -1000
   cursorY = -1000

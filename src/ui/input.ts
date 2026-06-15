@@ -63,7 +63,7 @@ export function bindInput(
         g.extractAt(p.x, p.y)
         break
       case 'echo':
-        g.echoAt(p.x, p.y, e.shiftKey)
+        g.echoAt(p.x, p.y, e.shiftKey || g.repelMode)
         break
       case 'scan':
         drag.active = true

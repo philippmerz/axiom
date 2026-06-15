@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>AXIOM</title>
+  <meta name="description" content="AXIOM — infer a randomly generated alien physics and exploit it under pressure." />
+  <meta name="theme-color" content="#050608" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="apple-mobile-web-app-title" content="AXIOM" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -48,7 +56,14 @@
         <div id="log-lines"></div>
       </section>
       <footer id="rail-footer">
+        <div id="mobile-species"></div>
         <div id="tools"></div>
+        <div id="mobile-actions">
+          <button id="m-pause" class="m-ctl">❚❚ PAUSE</button>
+          <button id="m-repel" class="m-ctl" title="echo places a repulsor">⇧ REPEL</button>
+          <button id="m-retry" class="m-ctl">↻ RETRY</button>
+          <button id="m-new" class="m-ctl">✦ NEW</button>
+        </div>
         <div id="keys-hint" class="dim">SPACE PAUSE · R RETRY · N NEW</div>
       </footer>
     </aside>
