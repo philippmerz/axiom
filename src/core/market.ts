@@ -25,6 +25,9 @@ export class Market {
   private readonly noise: number[]
   private readonly impactStepDecay: number
   readonly history: number[][]
+  /** Total samples ever taken — the history arrays are capped rings, so this
+   * is what the sparkline renderer keys its redraws on. */
+  samples = 0
   private sparkTimer = 0
 
   constructor(
@@ -64,6 +67,7 @@ export class Market {
     this.sparkTimer += dt
     if (this.sparkTimer >= m.sparkInterval) {
       this.sparkTimer -= m.sparkInterval
+      this.samples++
       for (let s = 0; s < this.k; s++) {
         const h = this.history[s] as number[]
         h.push(this.mid(s))

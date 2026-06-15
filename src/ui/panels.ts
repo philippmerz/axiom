@@ -32,14 +32,14 @@ export class Panels {
 
   private game!: Game
   private sparks: Array<{ canvas: HTMLCanvasElement; drawn: number }> = []
-  private renderedLog = 0
+  private renderedSeq = -1 // highest log entry seq appended to the DOM
   private glyphColor = new Map<string, string>()
 
   constructor(private readonly hooks: PanelHooks) {}
 
   bind(game: Game): void {
     this.game = game
-    this.renderedLog = 0
+    this.renderedSeq = -1
     this.logLines.innerHTML = ''
     const hex = seedToHex(game.session.seed)
     this.protocolId.textContent = `0x${hex}`
@@ -230,15 +230,20 @@ export class Panels {
   private drawSpark(s: number): void {
     const entry = this.sparks[s]
     const history = this.game.market.history[s]
-    if (!entry || !history || history.length === entry.drawn) return
-    entry.drawn = history.length
-    const c = entry.canvas
+    const samples = this.game.market.samples
     const dpr = window.devicePixelRatio || 1
+    const c = entry?.canvas
+    if (!entry || !history || !c) return
     const w = c.clientWidth || 60
     const h = c.clientHeight || 14
-    if (c.width !== w * dpr) {
-      c.width = w * dpr
-      c.height = h * dpr
+    const dprStale = c.width !== Math.round(w * dpr)
+    // redraw on a new sample (history is a capped ring, so length stops
+    // changing — key on the monotonic sample count) or a DPR change
+    if (samples === entry.drawn && !dprStale) return
+    entry.drawn = samples
+    if (dprStale) {
+      c.width = Math.round(w * dpr)
+      c.height = Math.round(h * dpr)
     }
     const ctx = c.getContext('2d') as CanvasRenderingContext2D
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -260,19 +265,20 @@ export class Panels {
 
   private updateLog(): void {
     const g = this.game
-    if (this.renderedLog > g.log.length) this.renderedLog = 0 // log was trimmed
     const atBottom =
       this.logLines.scrollTop + this.logLines.clientHeight >= this.logLines.scrollHeight - 8
-    while (this.renderedLog < g.log.length) {
-      const entry = g.log[this.renderedLog++]
-      if (!entry) continue
+    // append every entry newer than what we've shown — the log array is a
+    // capped ring, so we key on monotonic seq, not array length
+    for (const entry of g.log) {
+      if (entry.seq <= this.renderedSeq) continue
+      this.renderedSeq = entry.seq
       const line = document.createElement('div')
       line.className = `log-line ${entry.cls}`
       line.innerHTML =
         `<span class="log-time">${entry.time.toFixed(0).padStart(3, '0')}</span>` +
         `<span class="log-msg">${this.colorize(entry.msg)}</span>`
       this.logLines.appendChild(line)
-      while (this.logLines.children.length > 90) this.logLines.firstChild?.remove()
+      while (this.logLines.children.length > 120) this.logLines.firstChild?.remove()
     }
     if (atBottom) this.logLines.scrollTop = this.logLines.scrollHeight
   }

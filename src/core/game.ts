@@ -13,6 +13,7 @@ export type Phase = 'briefing' | 'running' | 'paused' | 'won' | 'lost'
 export type LogClass = 'intel' | 'trade' | 'alert' | 'event'
 
 export interface LogEntry {
+  seq: number // monotonic; the log array is a ring, so length can't track newness
   time: number
   msg: string
   cls: LogClass
@@ -51,6 +52,7 @@ export class Game {
   cursorX = -1000
   cursorY = -1000
   readonly log: LogEntry[] = []
+  logSeq = 0 // total entries ever logged; the log array itself is a capped ring
   readonly flashes: Flash[] = []
   lastExtractAt = -Infinity
   result: GameResult | null = null
@@ -81,7 +83,7 @@ export class Game {
   }
 
   note(msg: string, cls: LogClass): void {
-    this.log.push({ time: this.time, msg, cls })
+    this.log.push({ seq: this.logSeq++, time: this.time, msg, cls })
     if (this.log.length > 120) this.log.shift()
   }
 

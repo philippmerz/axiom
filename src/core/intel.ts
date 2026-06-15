@@ -11,8 +11,10 @@ export interface IntelReport {
 
 interface EchoTrack {
   beacon: Beacon
-  radialSums: Float64Array // signed radial velocity toward the echo, per species
-  samples: Float64Array
+  // directional vote per species: dot-steps moving toward vs away from the
+  // echo. Robust to friction/jitter where a raw velocity mean is not.
+  toward: Float64Array
+  away: Float64Array
 }
 
 /** What the player knows. Contact and unary laws confirm after being
@@ -73,29 +75,40 @@ export class Intel {
 
   // ---- echo experiments ----
 
-  /** Accumulate each species' radial response to active echoes. */
+  /** Tally each nearby dot's direction of motion relative to the echo, by
+   * species. Only dots inside the relevant force radius are counted — beyond
+   * it they feel no force, so they'd add pure jitter noise. */
   echoStep(world: World): void {
     for (const b of world.beacons) {
       if (b.kind !== 'echo') continue
       let track = this.echoes.get(b.id)
       if (!track) {
         const k = this.ruleset.species.length
-        track = { beacon: b, radialSums: new Float64Array(k), samples: new Float64Array(k) }
+        track = { beacon: b, toward: new Float64Array(k), away: new Float64Array(k) }
         this.echoes.set(b.id, track)
       }
       for (const d of world.dots) {
         const dx = b.x - d.x
         const dy = b.y - d.y
         const dist = Math.sqrt(dx * dx + dy * dy)
-        if (dist < 12 || dist > CONFIG.beaconRadius) continue
-        track.radialSums[d.species] = (track.radialSums[d.species] as number) + (d.vx * dx + d.vy * dy) / dist
-        track.samples[d.species] = (track.samples[d.species] as number) + 1
+        if (dist < 12 || dist > this.forceReach(d.species, b.species)) continue
+        const radial = (d.vx * dx + d.vy * dy) / dist // + toward the echo
+        if (radial > 1) track.toward[d.species] = (track.toward[d.species] as number) + 1
+        else if (radial < -1) track.away[d.species] = (track.away[d.species] as number) + 1
       }
     }
   }
 
-  /** Settle expired echoes: a consistent mean response in the direction the
-   * (hidden) force law predicts counts as one experimental observation. */
+  /** Sampling radius for an (s ← other) reaction: the real force radius if a
+   * law exists, else the beacon radius (so a null result is still measurable). */
+  private forceReach(s: number, other: number): number {
+    const f = this.ruleset.forces.find((r) => r.self === s && r.other === other)
+    return f ? f.radius : CONFIG.beaconRadius
+  }
+
+  /** Settle expired echoes: if a clear majority of a species' nearby dots
+   * moved in the direction the hidden force predicts, that's one experimental
+   * observation of the (s ← echoSpecies) law. */
   echoFinish(expired: Beacon[]): Rule[] {
     const confirmed: Rule[] = []
     for (const b of expired) {
@@ -103,13 +116,15 @@ export class Intel {
       this.echoes.delete(b.id)
       if (!track || b.kind !== 'echo') continue
       for (let s = 0; s < this.ruleset.species.length; s++) {
-        const n = track.samples[s] as number
-        if (n < 90) continue // need ~1.5s of aggregate dot-observations
-        const mean = (track.radialSums[s] as number) / n
-        if (Math.abs(mean) < CONFIG.echoResponseThreshold) continue
+        const t = track.toward[s] as number
+        const a = track.away[s] as number
+        const n = t + a
+        if (n < CONFIG.echoMinSamples) continue
+        const bias = (t - a) / n // +1 all toward, −1 all away
+        if (Math.abs(bias) < CONFIG.echoBiasThreshold) continue
         const rule = this.ruleset.forces.find((f) => f.self === s && f.other === b.species)
         if (!rule || this.knows(rule)) continue
-        if (Math.sign(rule.strength) !== Math.sign(mean)) continue // noise, not law
+        if (Math.sign(rule.strength) !== Math.sign(bias)) continue // noise, not law
         const id = ruleId(rule)
         const seen = (this.echoObs.get(id) ?? 0) + 1
         this.echoObs.set(id, seen)
@@ -154,7 +169,8 @@ export class Intel {
       (f) => (f.self === a && f.other === b) || (f.self === b && f.other === a),
     )
     if (!contact && !anyForce && !this.knownZero.has(zeroKey)) {
-      this.scansUsed++
+      // a half-price "no interaction" result must not ratchet the escalating
+      // scan price — leave scansUsed untouched
       this.knownZero.add(zeroKey)
       return { revealed: [], zero: true }
     }

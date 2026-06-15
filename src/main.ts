@@ -40,7 +40,7 @@ function generateAsync(seed: number, onAttempt: (n: number) => void): Promise<Se
 }
 
 const field = new FieldRenderer(el('field'), el('overlay-canvas'))
-const dossier = new DossierRenderer(el('dossier-canvas'), el('dossier-legend'))
+const dossier = new DossierRenderer(el('dossier-canvas'), el('dossier-legend'), el('dossier-tip'))
 const panels = new Panels({ onEngage: engage, onRetry: retry, onNew: fresh, onLoadSeed: loadSeed })
 const drag = bindInput(() => game, el('field-stack'), {
   onEngage: engage,

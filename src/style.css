@@ -173,7 +173,26 @@ body {
 
 /* ---- dossier ---- */
 
+#dossier { position: relative; }
 #dossier-canvas { width: 100%; display: block; }
+
+#dossier-tip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  max-width: 240px;
+  border: 1px solid #1d3a42;
+  background: #04060a;
+  color: var(--text-bright);
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+  padding: 5px 8px;
+  font-size: 10px;
+  transform: translate(-50%, calc(-100% - 8px));
+}
+
+#dossier-tip.hidden { display: none; }
+#dossier-tip .tip-kind { color: var(--text-dim); letter-spacing: 0.18em; display: block; font-size: 8px; }
 
 #dossier-legend {
   margin-top: 6px;

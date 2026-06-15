@@ -5,16 +5,54 @@ import type { ContactRule, ForceRule, Rule, Species } from '../core/types'
 /** The intel board: species as nodes on a ring, confirmed laws as typed
  * edges. Contact laws witnessed once or twice appear as faint mystery lines —
  * you know *something* happens there, not what. */
+interface Hotspot {
+  x: number
+  y: number
+  kind: string // tooltip header, e.g. 'CONTACT LAW'
+  text: string // natural-language relation
+}
+
 export class DossierRenderer {
   private readonly ctx: CanvasRenderingContext2D
   private cssW = 0
   private cssH = 0
+  private hotspots: Hotspot[] = []
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly legend: HTMLElement,
+    private readonly tip?: HTMLElement,
   ) {
     this.ctx = canvas.getContext('2d') as CanvasRenderingContext2D
+    if (this.tip) this.bindHover()
+  }
+
+  /** Hover hit-test: show the nearest symbol's relation in plain language. */
+  private bindHover(): void {
+    const tip = this.tip as HTMLElement
+    this.canvas.addEventListener('pointermove', (e) => {
+      const r = this.canvas.getBoundingClientRect()
+      const mx = e.clientX - r.left
+      const my = e.clientY - r.top
+      let best: Hotspot | null = null
+      let bestD2 = 16 * 16
+      for (const h of this.hotspots) {
+        const d2 = (h.x - mx) ** 2 + (h.y - my) ** 2
+        if (d2 < bestD2) {
+          bestD2 = d2
+          best = h
+        }
+      }
+      if (!best) {
+        tip.classList.add('hidden')
+        return
+      }
+      tip.innerHTML = `<span class="tip-kind">${best.kind}</span>${best.text}`
+      tip.style.left = `${best.x}px`
+      tip.style.top = `${best.y}px`
+      tip.classList.remove('hidden')
+    })
+    this.canvas.addEventListener('pointerleave', () => tip.classList.add('hidden'))
   }
 
   resize(cssW: number): void {
@@ -42,21 +80,42 @@ export class DossierRenderer {
       return [cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius]
     }
 
+    this.hotspots = []
     const known = game.intel.knownRules()
     for (const rule of known) {
-      if (rule.kind === 'force') this.forceEdge(rule, pos, species)
+      if (rule.kind === 'force') {
+        this.forceEdge(rule, pos, species)
+        const [mx, my] = this.forceMid(rule, pos)
+        this.hotspots.push({ x: mx, y: my, kind: 'FORCE LAW', text: describeRule(rule, species) })
+      }
     }
     for (const rule of known) {
-      if (rule.kind === 'contact') this.contactEdge(rule, pos, species, false)
+      if (rule.kind === 'contact') {
+        this.contactEdge(rule, pos, species, false)
+        const [mx, my] = this.contactMid(rule, pos)
+        this.hotspots.push({ x: mx, y: my, kind: 'CONTACT LAW', text: describeRule(rule, species) })
+      }
     }
     // mystery lines: witnessed but unconfirmed contact laws
     for (const rule of game.session.ruleset.contacts) {
       if (!game.intel.knows(rule) && game.intel.seenCount(rule) > 0) {
         this.contactEdge(rule, pos, species, true)
+        const [mx, my] = this.contactMid(rule, pos)
+        const seen = game.intel.seenCount(rule)
+        this.hotspots.push({
+          x: mx,
+          y: my,
+          kind: 'UNIDENTIFIED',
+          text: `${species[rule.a]?.glyph}·${species[rule.b]?.glyph} react — witnessed ${seen}/3, keep watching or scan`,
+        })
       }
     }
     for (const rule of known) {
-      if (rule.kind === 'fission' || rule.kind === 'decay') this.unaryMark(rule, pos, species)
+      if (rule.kind === 'fission' || rule.kind === 'decay') {
+        this.unaryMark(rule, pos, species)
+        const [x, y] = pos(rule.species)
+        this.hotspots.push({ x, y: y - 11, kind: 'LIFECYCLE', text: describeRule(rule, species) })
+      }
     }
 
     // nodes on top
@@ -72,9 +131,27 @@ export class DossierRenderer {
       const lx = cx + (x - cx) * 1.22
       const ly = cy + (y - cy) * 1.22
       ctx.fillText(s.glyph, lx, ly)
+      const count = game.sim.world.counts[s.id] ?? 0
+      this.hotspots.push({ x, y, kind: `CLASS ${s.name}`, text: `${count} live` })
     }
 
     this.updateLegend(game, known)
+  }
+
+  private forceMid(rule: ForceRule, pos: (s: number) => [number, number]): [number, number] {
+    const [x0, y0] = pos(rule.self)
+    const [x1, y1] = pos(rule.other)
+    return [(x0 + x1) / 2 + (y1 - y0) * 0.18, (y0 + y1) / 2 - (x1 - x0) * 0.18]
+  }
+
+  private contactMid(rule: ContactRule, pos: (s: number) => [number, number]): [number, number] {
+    if (rule.a === rule.b) {
+      const [x, y] = pos(rule.a)
+      return [x + 8, y - 16]
+    }
+    const [x0, y0] = pos(rule.a)
+    const [x1, y1] = pos(rule.b)
+    return [(x0 + x1) / 2, (y0 + y1) / 2]
   }
 
   private forceEdge(rule: ForceRule, pos: (s: number) => [number, number], species: Species[]): void {

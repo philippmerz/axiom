@@ -47,8 +47,8 @@ export const CONFIG = {
   market: {
     scarcityClamp: [0.3, 4] as const, // extinction can't be self-funding
     smoothing: 2.2, // s⁻¹ EMA rate toward fair price
-    impactPerTrade: 0.06,
-    impactMax: 0.6,
+    impactPerTrade: 0.1, // steep enough that buy-to-win spikes are costly
+    impactMax: 0.9,
     impactHalfLife: 45, // s — spamming one species stays expensive
     noiseTheta: 0.4, // OU mean-reversion
     noiseSigma: 0.05,
@@ -80,6 +80,7 @@ export const CONFIG = {
   // intel
   observationsToConfirm: 3,
   attentionRadius: 170, // events only count as witnessed near the cursor
-  echoResponseThreshold: 7, // mean radial speed that counts as a response
-  echoConfirms: 2, // consistent echo responses to confirm a force law
+  echoMinSamples: 140, // dot-steps near an echo needed before it can confirm
+  echoBiasThreshold: 0.12, // directional skew (toward−away)/n that signals a law
+  echoConfirms: 1, // one clean experiment confirms a force law
 } as const
