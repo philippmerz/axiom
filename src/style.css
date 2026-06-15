@@ -14,6 +14,16 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* the single visual token for a species: an inline colored dot */
+.sp-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  vertical-align: -1px;
+  margin: 0 1px;
+}
+
 html, body { height: 100%; background: var(--bg); }
 
 body {
@@ -151,8 +161,8 @@ body {
 
 .mkt-row {
   display: grid;
-  grid-template-columns: 10px 26px 34px 44px 1fr 14px;
-  gap: 8px;
+  grid-template-columns: 12px 36px 48px 1fr 16px;
+  gap: 9px;
   align-items: center;
   padding: 3px 4px;
   margin: 0 -4px;
@@ -163,8 +173,7 @@ body {
 .mkt-row:hover { background: #0d1117; }
 .mkt-row.selected { background: #0d1419; outline: 1px solid #1d3a42; }
 
-.mkt-swatch { width: 7px; height: 7px; border-radius: 50%; }
-.mkt-name { color: var(--text-bright); letter-spacing: 0.1em; }
+.mkt-swatch { width: 11px; height: 11px; border-radius: 50%; }
 .mkt-pop { color: var(--text-dim); text-align: right; }
 .mkt-price { text-align: right; color: var(--text); }
 .mkt-price.up { color: var(--ok); }
@@ -427,8 +436,8 @@ body {
   cursor: pointer;
 }
 
-.m-swatch .dot { width: 8px; height: 8px; border-radius: 50%; }
-.m-swatch.selected { border-color: #1d3a42; background: #0a1216; color: var(--text-bright); }
+.m-swatch .dot { width: 13px; height: 13px; border-radius: 50%; }
+.m-swatch.selected { border-color: #5fd8eb; background: #0a1216; }
 
 .m-ctl {
   flex: 1;

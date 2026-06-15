@@ -18,23 +18,13 @@ import type {
 // warn amber, alert red) so field and UI semantics never collide.
 const PALETTE = ['#ececec', '#e05299', '#8be05a', '#8b7bf7', '#4f86f7', '#f08c42', '#43d9ad']
 
-const DESIGNATIONS: ReadonlyArray<readonly [string, string]> = [
-  ['Σ', 'SIGMA'],
-  ['Θ', 'THETA'],
-  ['Δ', 'DELTA'],
-  ['Λ', 'LAMBDA'],
-  ['Ψ', 'PSI'],
-  ['Ω', 'OMEGA'],
-  ['Κ', 'KAPPA'],
-]
+// internal designations only — never shown; players identify species by color
+const DESIGNATIONS = ['SIGMA', 'THETA', 'DELTA', 'LAMBDA', 'PSI', 'OMEGA', 'KAPPA']
 
 function generateSpecies(rng: Rng, k: number): Species[] {
   const colors = rng.shuffle([...PALETTE]).slice(0, k)
   const names = rng.shuffle([...DESIGNATIONS]).slice(0, k)
-  return colors.map((color, id) => {
-    const [glyph, name] = names[id] as readonly [string, string]
-    return { id, name, glyph, color }
-  })
+  return colors.map((color, id) => ({ id, name: names[id] as string, color }))
 }
 
 function generateForces(rng: Rng, k: number): ForceRule[] {

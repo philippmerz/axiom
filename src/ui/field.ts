@@ -164,12 +164,12 @@ export class FieldRenderer {
         ctx.beginPath()
         ctx.arc(b.x, b.y, 7 + pulse * 26, 0, Math.PI * 2)
         ctx.stroke()
-        ctx.globalAlpha = 0.9
+        // the echo's species shown as its colored dot at the core
+        ctx.globalAlpha = 0.95
         ctx.fillStyle = color
-        ctx.font = '11px ui-monospace, monospace'
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(game.species[b.species]?.glyph ?? '?', b.x, b.y - 14)
+        ctx.beginPath()
+        ctx.arc(b.x, b.y, 3.2, 0, Math.PI * 2)
+        ctx.fill()
       } else {
         ctx.strokeStyle = '#9aa3ab'
         ctx.globalAlpha = 0.5
@@ -266,7 +266,8 @@ export class FieldRenderer {
         break
       }
       case 'echo': {
-        ctx.strokeStyle = selectedColor
+        // repel mode places a flat repulsor (all species) — show it neutral
+        ctx.strokeStyle = game.repelMode ? '#9aa3ab' : selectedColor
         ctx.globalAlpha = 0.6
         ctx.beginPath()
         ctx.arc(x, y, 7, 0, Math.PI * 2)

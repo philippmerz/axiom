@@ -1,6 +1,7 @@
-import { describeRule } from '../core/format'
+import { describeRule, speciesToken } from '../core/format'
 import type { Game } from '../core/game'
 import type { ContactRule, ForceRule, Rule, Species } from '../core/types'
+import { speciesDots } from './text'
 
 /** The intel board: species as nodes on a ring, confirmed laws as typed
  * edges. Contact laws witnessed once or twice appear as faint mystery lines —
@@ -97,14 +98,14 @@ export class DossierRenderer {
       if (rule.kind === 'force') {
         this.forceEdge(rule, pos, species)
         const [mx, my] = this.forceMid(rule, pos)
-        this.hotspots.push({ x: mx, y: my, kind: 'FORCE LAW', text: describeRule(rule, species) })
+        this.pushHotspot(mx, my, 'FORCE LAW', describeRule(rule, species), species)
       }
     }
     for (const rule of known) {
       if (rule.kind === 'contact') {
         this.contactEdge(rule, pos, species, false)
         const [mx, my] = this.contactMid(rule, pos)
-        this.hotspots.push({ x: mx, y: my, kind: 'CONTACT LAW', text: describeRule(rule, species) })
+        this.pushHotspot(mx, my, 'CONTACT LAW', describeRule(rule, species), species)
       }
     }
     // mystery lines: witnessed but unconfirmed contact laws
@@ -113,40 +114,34 @@ export class DossierRenderer {
         this.contactEdge(rule, pos, species, true)
         const [mx, my] = this.contactMid(rule, pos)
         const seen = game.intel.seenCount(rule)
-        this.hotspots.push({
-          x: mx,
-          y: my,
-          kind: 'UNIDENTIFIED',
-          text: `${species[rule.a]?.glyph}·${species[rule.b]?.glyph} react — witnessed ${seen}/3, keep watching or scan`,
-        })
+        const raw = `${speciesToken(rule.a)} ${speciesToken(rule.b)} REACT — WITNESSED ${seen}/3, KEEP WATCHING OR SCAN`
+        this.pushHotspot(mx, my, 'UNIDENTIFIED', raw, species)
       }
     }
     for (const rule of known) {
       if (rule.kind === 'fission' || rule.kind === 'decay') {
         this.unaryMark(rule, pos, species)
         const [x, y] = pos(rule.species)
-        this.hotspots.push({ x, y: y - 11, kind: 'LIFECYCLE', text: describeRule(rule, species) })
+        this.pushHotspot(x, y - 11, 'LIFECYCLE', describeRule(rule, species), species)
       }
     }
 
-    // nodes on top
+    // nodes on top — each species is just its colored dot
     for (const s of species) {
       const [x, y] = pos(s.id)
       ctx.fillStyle = s.color
       ctx.beginPath()
-      ctx.arc(x, y, 3.5, 0, Math.PI * 2)
+      ctx.arc(x, y, 5.5, 0, Math.PI * 2)
       ctx.fill()
-      ctx.font = '10px ui-monospace, monospace'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      const lx = cx + (x - cx) * 1.22
-      const ly = cy + (y - cy) * 1.22
-      ctx.fillText(s.glyph, lx, ly)
       const count = game.sim.world.counts[s.id] ?? 0
-      this.hotspots.push({ x, y, kind: `CLASS ${s.name}`, text: `${count} live` })
+      this.pushHotspot(x, y, 'CLASS', `${speciesToken(s.id)} — ${count} LIVE`, species)
     }
 
     this.updateLegend(game, known)
+  }
+
+  private pushHotspot(x: number, y: number, kind: string, raw: string, species: Species[]): void {
+    this.hotspots.push({ x, y, kind, text: speciesDots(raw, species) })
   }
 
   private forceMid(rule: ForceRule, pos: (s: number) => [number, number]): [number, number] {
@@ -278,6 +273,6 @@ export class DossierRenderer {
     // cycle through known laws so the board explains itself
     const idx = Math.floor(game.time / 3) % known.length
     const rule = known[idx] as Rule
-    this.legend.textContent = `${counter} · ${describeRule(rule, game.species)}`
+    this.legend.innerHTML = `${counter} · ${speciesDots(describeRule(rule, game.species), game.species)}`
   }
 }

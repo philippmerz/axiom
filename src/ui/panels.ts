@@ -1,8 +1,9 @@
 import { CONFIG } from '../core/config'
-import { fmtClock, fmtCredits, fmtPrice } from '../core/format'
+import { fmtClock, fmtCredits, fmtPrice, speciesToken } from '../core/format'
 import { findContactRule } from '../core/objective'
 import { seedToHex } from '../core/rng'
 import type { Game, GameResult } from '../core/game'
+import { speciesDots } from './text'
 
 export interface PanelHooks {
   onEngage: () => void
@@ -36,7 +37,6 @@ export class Panels {
   private game!: Game
   private sparks: Array<{ canvas: HTMLCanvasElement; drawn: number }> = []
   private renderedSeq = -1 // highest log entry seq appended to the DOM
-  private glyphColor = new Map<string, string>()
 
   constructor(private readonly hooks: PanelHooks) {
     // mobile bottom-bar controls (hidden on desktop via CSS)
@@ -59,7 +59,6 @@ export class Panels {
       this.protocolId.classList.add('copied')
       setTimeout(() => this.protocolId.classList.remove('copied'), 1200)
     }
-    this.glyphColor = new Map(game.species.map((s) => [s.glyph, s.color]))
     this.buildMarket()
     this.buildTools()
     this.buildMobileSpecies()
@@ -73,7 +72,8 @@ export class Panels {
       const chip = document.createElement('button')
       chip.className = 'm-swatch'
       chip.dataset['species'] = String(s.id)
-      chip.innerHTML = `<span class="dot" style="background:${s.color}"></span><span style="color:${s.color}">${s.glyph}</span>`
+      chip.title = s.name
+      chip.innerHTML = `<span class="dot" style="background:${s.color}"></span>`
       chip.addEventListener('click', () => {
         this.game.selected = s.id
       })
@@ -103,14 +103,9 @@ export class Panels {
     })
   }
 
-  /** Wrap every species glyph in its color — keeps text scannable when the
-   * log talks about five different Greek letters at once. */
+  /** Render a built string for the DOM, each species token → its colored dot. */
   private colorize(text: string): string {
-    let html = text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] as string)
-    for (const [glyph, color] of this.glyphColor) {
-      html = html.replaceAll(glyph, `<span style="color:${color}">${glyph}</span>`)
-    }
-    return html
+    return speciesDots(text, this.game.species)
   }
 
   // ---- static builds ----
@@ -127,7 +122,6 @@ export class Panels {
       spark.className = 'mkt-spark'
       row.innerHTML =
         `<span class="mkt-swatch" style="background:${s.color}"></span>` +
-        `<span class="mkt-name" style="color:${s.color}">${s.glyph}</span>` +
         `<span class="mkt-pop"></span>` +
         `<span class="mkt-price"></span>`
       row.appendChild(spark)
@@ -194,7 +188,7 @@ export class Panels {
     const { primary, constraint } = g.session.objective
     const t = g.tracker
     const counts = g.sim.world.counts
-    const glyph = (s: number) => g.species[s]?.glyph ?? '?'
+    const glyph = speciesToken // species token → colored dot via colorize()
 
     let pText = ''
     let pNow = ''
@@ -338,7 +332,7 @@ export class Panels {
           cost.textContent = g.extractReady() >= 1 ? '+BID' : '···'
           break
         case 'echo':
-          cost.textContent = `−${CONFIG.echoCost}`
+          cost.textContent = `−${g.repelMode ? CONFIG.flatCost : CONFIG.echoCost}`
           break
         case 'scan':
           cost.textContent = `−${g.intel.scanCost()}`
@@ -349,7 +343,7 @@ export class Panels {
 
   private updateHud(): void {
     const g = this.game
-    const glyph = g.species[g.selected]?.glyph ?? '?'
+    const glyph = speciesToken(g.selected) // → colored dot via colorize()
     let tool = ''
     let hint = ''
     switch (g.tool) {
@@ -362,8 +356,13 @@ export class Panels {
         hint = g.extractReady() >= 1 ? 'CLICK DOT — SELLS AT BID' : 'RECHARGING'
         break
       case 'echo':
-        tool = `ECHO ${glyph}`
-        hint = `PHANTOM ${glyph} — REACTION UNKNOWN · ⇧CLICK FLAT REPULSOR −${CONFIG.flatCost}`
+        if (g.repelMode) {
+          tool = `REPEL −${CONFIG.flatCost}`
+          hint = `FLAT REPULSOR — PUSHES ALL CLASSES · TOGGLE OFF FOR ECHO`
+        } else {
+          tool = `ECHO ${glyph}`
+          hint = `PHANTOM ${glyph} — REACTION UNKNOWN · ⇧CLICK FLAT REPULSOR −${CONFIG.flatCost}`
+        }
         break
       case 'scan':
         tool = `SCAN −${g.intel.scanCost()}`
@@ -371,8 +370,9 @@ export class Panels {
         break
     }
     this.hudTool.innerHTML = this.colorize(tool)
-    this.hudHint.textContent =
-      g.phase === 'paused' ? 'PAUSED — TAP TO QUEUE MOVES, RESUME TO EXECUTE' : hint
+    this.hudHint.innerHTML = this.colorize(
+      g.phase === 'paused' ? 'PAUSED — TAP TO QUEUE MOVES, RESUME TO EXECUTE' : hint,
+    )
   }
 
   // ---- overlays ----
@@ -388,7 +388,7 @@ export class Panels {
     this.bind(game)
     const o = game.session.objective
     const k = game.species.length
-    const glyph = (s: number) => game.species[s]?.glyph ?? '?'
+    const glyph = speciesToken // species token → colored dot via colorize()
     let pText = ''
     switch (o.primary.kind) {
       case 'amplify':

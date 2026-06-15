@@ -1,29 +1,16 @@
-import type { ContactOutcome, Rule, Species } from './types'
+import type { Rule, Species } from './types'
 
-export function outcomeGlyph(outcome: ContactOutcome): string {
-  switch (outcome.kind) {
-    case 'consume':
-      return '✕'
-    case 'convert':
-      return '⇒'
-    case 'spawn':
-      return '+'
-    case 'merge':
-      return '⊕'
-  }
-}
-
-/** A species is denoted by its colored dot, never a letter. In built strings
- * it appears as this sentinel token (the id wrapped in U+0001 controls); the
- * UI (speciesDots) swaps each token for an inline colored dot. The control
- * char never occurs in normal text, so it won't collide with the digits in
- * durations or counts. */
+/** A species is denoted only by its colored dot — never a letter or name. In
+ * built strings it appears as this sentinel token (the id wrapped in '@'); the
+ * UI (speciesDots) swaps each token for an inline colored dot. '@' never
+ * occurs in generated text, so it can't collide with digits in durations or
+ * counts. */
 export function speciesToken(id: number): string {
-  return `${id}`
+  return `@${id}@`
 }
 
 /** Matches species tokens so the UI can replace them with colored dots. */
-export const SPECIES_TOKEN_RE = /(\d+)/g
+export const SPECIES_TOKEN_RE = /@(\d+)@/g
 
 /** Plain-words law description, used by log, dossier caption and scans.
  * Species appear as tokens that the UI renders as colored dots. */

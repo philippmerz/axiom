@@ -1,7 +1,8 @@
-/** AXIOM service worker — dependency-free, stale-while-revalidate.
- * Caches the app shell so the game runs offline once loaded; serves cached
- * assets instantly and refreshes them in the background. */
-const CACHE = 'axiom-v1'
+/** AXIOM service worker — dependency-free. Network-first for navigations so a
+ * fresh deploy is picked up immediately and the shell never pins stale hashed
+ * assets; cache-first for the content-hashed assets themselves (immutable), so
+ * the game still loads offline. Bump CACHE on release to purge old entries. */
+const CACHE = 'axiom-v2'
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png']
 
 self.addEventListener('install', (e) => {
@@ -18,18 +19,41 @@ self.addEventListener('activate', (e) => {
   )
 })
 
+// only store same-origin, non-redirected 2xx basic responses
+function cacheable(res) {
+  return res && res.ok && res.type === 'basic' && !res.redirected
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return
+
+  if (req.mode === 'navigate') {
+    // network-first: always try the live shell, fall back to cache offline
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (cacheable(res)) {
+            const copy = res.clone()
+            caches.open(CACHE).then((c) => c.put('/index.html', copy))
+          }
+          return res
+        })
+        .catch(() => caches.open(CACHE).then((c) => c.match('/index.html').then((m) => m || c.match('/')))),
+    )
+    return
+  }
+
+  // hashed assets are immutable: serve from cache, revalidate in background
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const cached = await cache.match(req)
       const network = fetch(req)
         .then((res) => {
-          if (res && res.status === 200) cache.put(req, res.clone())
+          if (cacheable(res)) cache.put(req, res.clone())
           return res
         })
-        .catch(() => cached || (req.mode === 'navigate' ? cache.match('/index.html') : undefined))
+        .catch(() => cached)
       return cached || network
     }),
   )

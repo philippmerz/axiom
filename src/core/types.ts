@@ -2,8 +2,9 @@
 
 export interface Species {
   id: number
+  /** Internal designation (e.g. "SIGMA") — kept for debugging/seeds, never
+   * shown in the UI. Players identify a species only by its color. */
   name: string
-  glyph: string
   color: string
 }
 
