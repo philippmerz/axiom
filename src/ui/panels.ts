@@ -331,7 +331,8 @@ export class Panels {
         break
     }
     this.hudTool.innerHTML = this.colorize(tool)
-    this.hudHint.textContent = g.phase === 'paused' ? 'PAUSED — TOOLS OFFLINE' : hint
+    this.hudHint.textContent =
+      g.phase === 'paused' ? 'PAUSED — TAP TO QUEUE MOVES, RESUME TO EXECUTE' : hint
   }
 
   // ---- overlays ----

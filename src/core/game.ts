@@ -19,6 +19,13 @@ export interface LogEntry {
   cls: LogClass
 }
 
+/** A tool action recorded while paused, replayed in order on resume. */
+export type QueuedAction =
+  | { kind: 'deploy'; x: number; y: number; species: number }
+  | { kind: 'extract'; x: number; y: number }
+  | { kind: 'echo'; x: number; y: number; species: number; flat: boolean }
+  | { kind: 'scan'; x0: number; y0: number; x1: number; y1: number }
+
 export interface Flash {
   kind: 'event' | 'deploy' | 'extract' | 'miss'
   x: number
@@ -54,6 +61,8 @@ export class Game {
   readonly log: LogEntry[] = []
   logSeq = 0 // total entries ever logged; the log array itself is a capped ring
   readonly flashes: Flash[] = []
+  /** Moves recorded during the current pause, executed on resume. */
+  pending: QueuedAction[] = []
   lastExtractAt = -Infinity
   result: GameResult | null = null
 
@@ -172,28 +181,69 @@ export class Game {
   togglePause(): void {
     if (this.phase === 'running') {
       this.phase = 'paused'
-      this.note('PAUSED — OBSERVATION ONLY', 'event')
+      this.note('PAUSED — PLAN MOVES, RESUME TO EXECUTE', 'event')
     } else if (this.phase === 'paused') {
       this.phase = 'running'
+      this.flushQueue()
     }
   }
 
+  /** Run every action queued during the pause, in order, under normal rules. */
+  private flushQueue(): void {
+    if (this.pending.length === 0) return
+    const queued = this.pending
+    this.pending = []
+    let done = 0
+    for (const a of queued) {
+      const before = this.credits
+      switch (a.kind) {
+        case 'deploy':
+          this.doDeploy(a.species, a.x, a.y)
+          break
+        case 'extract':
+          this.doExtract(a.x, a.y)
+          break
+        case 'echo':
+          this.doEcho(a.x, a.y, a.species, a.flat)
+          break
+        case 'scan':
+          this.doScan(a.x0, a.y0, a.x1, a.y1)
+          break
+      }
+      if (this.credits !== before || a.kind === 'extract' || a.kind === 'scan') done++
+    }
+    this.note(`RESUMED — ${done}/${queued.length} QUEUED MOVES EXECUTED`, 'event')
+  }
+
   // ---- tools ----
+  // Each public entry point gates on phase: while paused it records the move
+  // for replay on resume; while running it fires immediately. The do* methods
+  // hold the real logic and take explicit params (so a queued deploy keeps the
+  // species it was queued with, not whatever is selected at resume).
 
   private noFunds(): void {
     this.note('INSUFFICIENT FUNDS', 'alert')
   }
 
   deployAt(x: number, y: number): void {
+    if (this.phase === 'paused') {
+      this.pending.push({ kind: 'deploy', x, y, species: this.selected })
+      this.note(`QUEUED DEPLOY ${this.glyph(this.selected)}`, 'event')
+      return
+    }
     if (this.phase !== 'running') return
-    const cost = this.market.ask(this.selected)
+    this.doDeploy(this.selected, x, y)
+  }
+
+  private doDeploy(species: number, x: number, y: number): void {
+    const cost = this.market.ask(species)
     if (this.credits < cost) return this.noFunds()
-    const dot = this.sim.deploy(this.selected, x, y)
+    const dot = this.sim.deploy(species, x, y)
     if (!dot) return this.note('FIELD SATURATED — DEPLOY ABORTED', 'alert')
     this.credits -= cost
-    this.market.recordBuy(this.selected)
-    this.flashes.push({ kind: 'deploy', x, y, color: this.species[this.selected]?.color ?? '#fff', start: this.time })
-    this.note(`DEPLOY ${this.glyph(this.selected)} −${fmtPrice(cost)}`, 'trade')
+    this.market.recordBuy(species)
+    this.flashes.push({ kind: 'deploy', x, y, color: this.species[species]?.color ?? '#fff', start: this.time })
+    this.note(`DEPLOY ${this.glyph(species)} −${fmtPrice(cost)}`, 'trade')
   }
 
   extractReady(): number {
@@ -201,7 +251,16 @@ export class Game {
   }
 
   extractAt(x: number, y: number): void {
+    if (this.phase === 'paused') {
+      this.pending.push({ kind: 'extract', x, y })
+      this.note('QUEUED EXTRACT', 'event')
+      return
+    }
     if (this.phase !== 'running') return
+    this.doExtract(x, y)
+  }
+
+  private doExtract(x: number, y: number): void {
     if (this.extractReady() < 1) return
     const dot = this.sim.nearestDot(x, y, CONFIG.extractRadius)
     if (!dot) {
@@ -218,21 +277,36 @@ export class Game {
   }
 
   echoAt(x: number, y: number, flat: boolean): void {
+    if (this.phase === 'paused') {
+      this.pending.push({ kind: 'echo', x, y, species: this.selected, flat })
+      this.note(`QUEUED ${flat ? 'REPULSOR' : 'ECHO ' + this.glyph(this.selected)}`, 'event')
+      return
+    }
     if (this.phase !== 'running') return
+    this.doEcho(x, y, this.selected, flat)
+  }
+
+  private doEcho(x: number, y: number, species: number, flat: boolean): void {
     const cost = flat ? CONFIG.flatCost : CONFIG.echoCost
     if (this.credits < cost) return this.noFunds()
     this.credits -= cost
-    this.sim.addBeacon(flat ? 'flat' : 'echo', x, y, this.selected)
-    this.note(
-      flat ? `REPULSOR DEPLOYED −${cost}` : `ECHO ${this.glyph(this.selected)} −${cost}`,
-      'trade',
-    )
+    this.sim.addBeacon(flat ? 'flat' : 'echo', x, y, species)
+    this.note(flat ? `REPULSOR DEPLOYED −${cost}` : `ECHO ${this.glyph(species)} −${cost}`, 'trade')
   }
 
   /** SCAN: a click queries a dot's lifecycle; a drag from dot A to dot B
    * queries the (A,B) relation — contact law first, then force laws. */
   scanDrag(x0: number, y0: number, x1: number, y1: number): void {
+    if (this.phase === 'paused') {
+      this.pending.push({ kind: 'scan', x0, y0, x1, y1 })
+      this.note('QUEUED SCAN', 'event')
+      return
+    }
     if (this.phase !== 'running') return
+    this.doScan(x0, y0, x1, y1)
+  }
+
+  private doScan(x0: number, y0: number, x1: number, y1: number): void {
     const start = this.sim.nearestDot(x0, y0, 24)
     if (!start) {
       this.flashes.push({ kind: 'miss', x: x0, y: y0, color: '#555', start: this.time })

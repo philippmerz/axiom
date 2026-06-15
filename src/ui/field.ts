@@ -78,9 +78,57 @@ export class FieldRenderer {
     this.grid(ctx)
     this.beacons(ctx, game)
     for (const f of game.flashes) this.flash(ctx, f, game.time)
+    if (game.pending.length > 0) this.queued(ctx, game)
     if (game.phase === 'running' || game.phase === 'paused') this.cursor(ctx, game, drag)
     if (game.tracker.violating && game.phase !== 'briefing') this.alarmBorder(ctx, game)
-    if (game.phase === 'paused') this.pausedLabel(ctx)
+    if (game.phase === 'paused') this.pausedLabel(ctx, game)
+  }
+
+  /** Ghost previews of moves queued during a pause, numbered in fire order. */
+  private queued(ctx: CanvasRenderingContext2D, game: Game): void {
+    ctx.font = '9px ui-monospace, monospace'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    game.pending.forEach((a, i) => {
+      const color =
+        a.kind === 'deploy' || a.kind === 'echo'
+          ? game.species[a.species]?.color ?? '#fff'
+          : a.kind === 'extract'
+            ? '#e8442a'
+            : '#5fd8eb'
+      const x = a.kind === 'scan' ? a.x0 : a.x
+      const y = a.kind === 'scan' ? a.y0 : a.y
+      ctx.globalAlpha = 0.85
+      ctx.strokeStyle = color
+      ctx.fillStyle = color
+      ctx.setLineDash([3, 3])
+      if (a.kind === 'deploy') {
+        ctx.beginPath()
+        ctx.arc(x, y, CONFIG.dotRadius + 1.5, 0, Math.PI * 2)
+        ctx.stroke()
+      } else if (a.kind === 'echo') {
+        ctx.beginPath()
+        ctx.arc(x, y, 8, 0, Math.PI * 2)
+        ctx.stroke()
+      } else if (a.kind === 'extract') {
+        const r = 7
+        ctx.beginPath()
+        ctx.moveTo(x - r, y - r)
+        ctx.lineTo(x + r, y + r)
+        ctx.moveTo(x + r, y - r)
+        ctx.lineTo(x - r, y + r)
+        ctx.stroke()
+      } else {
+        ctx.beginPath()
+        ctx.moveTo(a.x0, a.y0)
+        ctx.lineTo(a.x1, a.y1)
+        ctx.stroke()
+      }
+      ctx.setLineDash([])
+      ctx.globalAlpha = 0.6
+      ctx.fillText(String(i + 1), x + 11, y - 9) // fire-order index
+      ctx.globalAlpha = 1
+    })
   }
 
   private grid(ctx: CanvasRenderingContext2D): void {
@@ -267,11 +315,13 @@ export class FieldRenderer {
     ctx.lineWidth = 1
   }
 
-  private pausedLabel(ctx: CanvasRenderingContext2D): void {
+  private pausedLabel(ctx: CanvasRenderingContext2D, game?: Game): void {
     ctx.fillStyle = '#9aa3ab'
     ctx.font = '10px ui-monospace, monospace'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'top'
-    ctx.fillText('▮▮ PAUSED — OBSERVATION ONLY', CONFIG.fieldSize / 2, 10)
+    const n = game?.pending.length ?? 0
+    const label = n > 0 ? `▮▮ PAUSED — ${n} MOVE${n > 1 ? 'S' : ''} QUEUED · RESUME TO EXECUTE` : '▮▮ PAUSED — PLAN MOVES, RESUME TO EXECUTE'
+    ctx.fillText(label, CONFIG.fieldSize / 2, 10)
   }
 }
