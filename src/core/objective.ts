@@ -1,0 +1,285 @@
+import { CONFIG } from './config'
+import { Rng } from './rng'
+import { ruleId } from './types'
+import type {
+  BurninStats,
+  ConstraintSpec,
+  ContactRule,
+  ObjectiveSpec,
+  PrimarySpec,
+  Ruleset,
+} from './types'
+
+/** Species with at least one inflow (fission, or produced by a contact rule).
+ * AMPLIFY needs one to out-build decay; SUPPRESS needs one so a single purge
+ * can't hold zero — the player must find and cut the source. */
+function hasProduction(ruleset: Ruleset, s: number): boolean {
+  if (ruleset.unaries.some((u) => u.species === s && u.kind === 'fission')) return true
+  if (ruleset.unaries.some((u) => u.kind === 'decay' && u.into === s)) return true
+  return ruleset.contacts.some((c) => {
+    const o = c.outcome
+    return (
+      (o.kind === 'convert' && o.into === s) ||
+      (o.kind === 'spawn' && o.child === s) ||
+      (o.kind === 'merge' && o.into === s)
+    )
+  })
+}
+
+/** Something in the world can kill this species — a preserve constraint on
+ * an immortal species would be dead weight. */
+function mortal(ruleset: Ruleset, s: number): boolean {
+  return (
+    ruleset.unaries.some((u) => u.species === s && u.kind === 'decay') ||
+    ruleset.contacts.some(
+      (c) =>
+        (c.outcome.kind === 'consume' && c.b === s) ||
+        (c.outcome.kind === 'convert' && c.b === s) ||
+        (c.outcome.kind === 'merge' && (c.a === s || c.b === s)),
+    )
+  )
+}
+
+/** Species one rule away from `s` — used to pick constraints that genuinely
+ * conflict with the primary objective. */
+function coupledTo(ruleset: Ruleset, s: number): Set<number> {
+  const out = new Set<number>()
+  for (const c of ruleset.contacts) {
+    const products: number[] = []
+    if (c.outcome.kind === 'convert' || c.outcome.kind === 'merge') products.push(c.outcome.into)
+    if (c.outcome.kind === 'spawn') products.push(c.outcome.child)
+    if (c.a === s || c.b === s || products.includes(s)) {
+      out.add(c.a)
+      out.add(c.b)
+      for (const p of products) out.add(p)
+    }
+  }
+  for (const u of ruleset.unaries) {
+    if (u.kind === 'decay' && u.into !== null) {
+      if (u.species === s) out.add(u.into)
+      if (u.into === s) out.add(u.species)
+    }
+  }
+  for (const f of ruleset.forces) {
+    if (Math.abs(f.strength) < 0.5) continue
+    if (f.self === s) out.add(f.other)
+    if (f.other === s) out.add(f.self)
+  }
+  out.delete(s)
+  return out
+}
+
+export function generateObjective(
+  ruleset: Ruleset,
+  burnin: BurninStats,
+  marketBases: number[],
+  rng: Rng,
+): ObjectiveSpec {
+  const k = ruleset.species.length
+  const all = [...Array(k).keys()]
+  const mean = (s: number) => burnin.meanCounts[s] as number
+  const peak = (s: number) => burnin.peakCounts[s] as number
+  const low = (s: number) => burnin.minCounts[s] as number
+
+  // strictly above anything the null trajectory reached — can't auto-win
+  const amplifyTarget = (s: number) =>
+    Math.max(Math.round(peak(s) * 1.35), Math.round(mean(s) * 1.9), Math.round(peak(s)) + 12)
+
+  const amplifyCandidates = all.filter(
+    (s) =>
+      mean(s) >= 6 &&
+      mean(s) <= 130 &&
+      hasProduction(ruleset, s) &&
+      amplifyTarget(s) <= 240, // headroom under the physics bounds
+  )
+  // never naturally near zero (no auto-win) and regenerating (no purge-once win)
+  const suppressCandidates = all.filter(
+    (s) => mean(s) >= 8 && low(s) >= 3 && hasProduction(ruleset, s),
+  )
+  const catalyzeCandidates = ruleset.contacts.filter((c) => {
+    const fires = burnin.ruleFires[ruleId(c)] ?? 0
+    return fires >= 8 && fires <= 120
+  })
+
+  const order = weightedKinds(rng)
+  let primary: PrimarySpec | null = null
+  for (const kind of order) {
+    if (kind === 'amplify' && amplifyCandidates.length > 0) {
+      const s = rng.pick(amplifyCandidates)
+      primary = { kind, species: s, target: amplifyTarget(s) }
+    } else if (kind === 'suppress' && suppressCandidates.length > 0) {
+      primary = { kind, species: rng.pick(suppressCandidates) }
+    } else if (kind === 'catalyze' && catalyzeCandidates.length > 0) {
+      const rule = rng.pick(catalyzeCandidates)
+      // ruleFires is the measured full-horizon natural rate; demanding 1.8×
+      // means the reaction must be engineered, not waited for
+      const fires = burnin.ruleFires[ruleId(rule)] ?? 8
+      primary = {
+        kind,
+        ruleKey: ruleId(rule),
+        target: Math.min(200, Math.max(15, Math.round(fires * 1.8))),
+      }
+    } else if (kind === 'accumulate') {
+      const birthsPerSec = burnin.births / CONFIG.deadline
+      const meanBase = marketBases.reduce((a, b) => a + b, 0) / Math.max(1, marketBases.length)
+      const est = birthsPerSec * CONFIG.deadline * meanBase * (1 - CONFIG.market.sellHaircut) * 0.5
+      const margin = 50 * Math.round(Math.min(1500, Math.max(500, 0.6 * est)) / 50)
+      primary = { kind, credits: CONFIG.startCredits + margin }
+    }
+    if (primary) break
+  }
+  if (!primary) primary = { kind: 'accumulate', credits: CONFIG.startCredits + 600 }
+
+  return {
+    primary,
+    constraint: generateConstraint(ruleset, burnin, primary, rng),
+    deadline: CONFIG.deadline,
+    holdSeconds: CONFIG.holdSeconds,
+    graceSeconds: CONFIG.graceSeconds,
+  }
+}
+
+function weightedKinds(rng: Rng): Array<PrimarySpec['kind']> {
+  const weighted: Array<[PrimarySpec['kind'], number]> = [
+    ['amplify', 0.3],
+    ['suppress', 0.3],
+    ['catalyze', 0.25],
+    ['accumulate', 0.15],
+  ]
+  const order: Array<PrimarySpec['kind']> = []
+  const pool = [...weighted]
+  while (pool.length > 0) {
+    const total = pool.reduce((a, [, w]) => a + w, 0)
+    let roll = rng.next() * total
+    const i = pool.findIndex(([, w]) => (roll -= w) <= 0)
+    const picked = pool.splice(i < 0 ? pool.length - 1 : i, 1)[0]
+    if (picked) order.push(picked[0])
+  }
+  return order
+}
+
+function generateConstraint(
+  ruleset: Ruleset,
+  burnin: BurninStats,
+  primary: PrimarySpec,
+  rng: Rng,
+): ConstraintSpec {
+  const k = ruleset.species.length
+  const all = [...Array(k).keys()]
+  const mean = (s: number) => burnin.meanCounts[s] as number
+  const peak = (s: number) => burnin.peakCounts[s] as number
+
+  const primarySpecies: number[] =
+    primary.kind === 'amplify' || primary.kind === 'suppress'
+      ? [primary.species]
+      : primary.kind === 'catalyze'
+        ? participantsOf(ruleset, primary.ruleKey)
+        : []
+  const eligible = all.filter((s) => !primarySpecies.includes(s))
+  const coupled = eligible.filter((s) =>
+    primarySpecies.some((p) => coupledTo(ruleset, p).has(s)),
+  )
+  const pool = coupled.length > 0 ? coupled : eligible.length > 0 ? eligible : all
+
+  const low = (s: number) => burnin.minCounts[s] as number
+  // preserve floor must sit well below the natural minimum (the session is a
+  // different random realization than the measured run), but high enough
+  // that a real population must be defended, not two tokens
+  const preservable = pool.filter((s) => mortal(ruleset, s) && mean(s) <= 80 && low(s) >= 8)
+  if (rng.chance(0.4) && preservable.length > 0) {
+    const s = rng.pick(preservable)
+    const min = Math.min(low(s) - 4, Math.max(2, Math.round(low(s) * 0.4)))
+    return { kind: 'preserve', species: s, min }
+  }
+  // contain ceiling sits above the natural peak (no auto-loss) — it binds
+  // only when the player's own actions push the species there
+  const s = rng.pick(pool)
+  const max = Math.max(Math.round(peak(s) * 1.3), peak(s) + 8, Math.round(mean(s)) + 15)
+  return { kind: 'contain', species: s, max }
+}
+
+function participantsOf(ruleset: Ruleset, ruleKey: string): number[] {
+  const rule = ruleset.contacts.find((c) => ruleId(c) === ruleKey)
+  return rule ? [rule.a, rule.b] : []
+}
+
+export function findContactRule(ruleset: Ruleset, ruleKey: string): ContactRule | null {
+  return ruleset.contacts.find((c) => ruleId(c) === ruleKey) ?? null
+}
+
+// ---- live evaluation ----
+
+export type ObjectiveStatus = 'running' | 'won' | 'lost'
+
+export class ObjectiveTracker {
+  holdLeft: number
+  graceLeft: number
+  primaryMet = false // condition currently true (may still need to hold)
+  violating = false
+  fireCount = 0 // catalyze progress
+  status: ObjectiveStatus = 'running'
+  failReason: string | null = null
+
+  constructor(readonly spec: ObjectiveSpec) {
+    this.holdLeft = spec.holdSeconds
+    this.graceLeft = spec.graceSeconds
+  }
+
+  /** Game feeds every firing of the catalyzed rule. */
+  noteFire(ruleKey: string): void {
+    if (this.spec.primary.kind === 'catalyze' && this.spec.primary.ruleKey === ruleKey) {
+      this.fireCount++
+    }
+  }
+
+  update(counts: number[], credits: number, time: number, dt: number): void {
+    if (this.status !== 'running') return
+    const { primary, constraint } = this.spec
+
+    this.violating =
+      constraint.kind === 'contain'
+        ? (counts[constraint.species] as number) > constraint.max
+        : (counts[constraint.species] as number) < constraint.min
+    if (this.violating) {
+      this.graceLeft -= dt
+      if (this.graceLeft <= 0) {
+        this.status = 'lost'
+        this.failReason =
+          constraint.kind === 'contain' ? 'CONTAINMENT FAILURE' : 'PRESERVATION FAILURE'
+        return
+      }
+    } else {
+      this.graceLeft = this.spec.graceSeconds
+    }
+
+    switch (primary.kind) {
+      case 'amplify':
+        this.primaryMet = (counts[primary.species] as number) >= primary.target
+        break
+      case 'suppress':
+        this.primaryMet = (counts[primary.species] as number) === 0
+        break
+      case 'accumulate':
+        this.primaryMet = credits >= primary.credits
+        break
+      case 'catalyze':
+        this.primaryMet = this.fireCount >= primary.target
+        break
+    }
+    const needsHold = primary.kind === 'amplify' || primary.kind === 'suppress'
+    if (this.primaryMet) {
+      this.holdLeft -= dt
+      if (!needsHold || this.holdLeft <= 0) {
+        this.status = 'won'
+        return
+      }
+    } else {
+      this.holdLeft = this.spec.holdSeconds
+    }
+
+    if (time >= this.spec.deadline) {
+      this.status = 'lost'
+      this.failReason = 'DEADLINE EXPIRED'
+    }
+  }
+}

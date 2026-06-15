@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AXIOM</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <main id="field-wrap">
+      <div id="field-stack">
+        <canvas id="field"></canvas>
+        <canvas id="overlay-canvas"></canvas>
+      </div>
+      <div id="field-hud">
+        <span id="hud-tool"></span>
+        <span id="hud-hint"></span>
+      </div>
+    </main>
+    <aside id="rail">
+      <header id="rail-header">
+        <div id="title-line">AXIOM <span class="dim">//</span> <span id="protocol-id"></span></div>
+        <div id="status-line">
+          <span id="clock"></span>
+          <span id="credits"></span>
+        </div>
+      </header>
+      <section id="objective" class="block">
+        <h2>OBJECTIVE</h2>
+        <div id="objective-body"></div>
+      </section>
+      <section id="market" class="block">
+        <h2>MARKET</h2>
+        <div id="market-rows"></div>
+      </section>
+      <section id="dossier" class="block">
+        <h2>DOSSIER</h2>
+        <canvas id="dossier-canvas"></canvas>
+        <div id="dossier-legend"></div>
+      </section>
+      <section id="log" class="block">
+        <h2>EVENT LOG</h2>
+        <div id="log-lines"></div>
+      </section>
+      <footer id="rail-footer">
+        <div id="tools"></div>
+        <div id="keys-hint" class="dim">SPACE PAUSE · R RETRY · N NEW</div>
+      </footer>
+    </aside>
+    <div id="overlay" class="hidden">
+      <div id="overlay-card"></div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
