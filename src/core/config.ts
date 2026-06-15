@@ -20,21 +20,26 @@ export const CONFIG = {
   // validation: a 60s burn-in gate, then the same world runs on to the full
   // session horizon (deadline). Objectives are calibrated against that
   // measured null trajectory, so they cannot complete or fail untouched.
+  // A doomed world is obvious within ~25s, so the gate is short — that makes
+  // each REJECTED candidate cheap. The accepted winner still runs the full
+  // horizon for calibration, and the continuation catches late degeneration.
   burnin: {
-    seconds: 60,
+    seconds: 26, // gate window
     minPerSpecies: 2,
-    maxPerSpecies: 280,
+    maxPerSpecies: 230,
     minTotal: 40,
-    maxTotal: 700,
-    minContactEvents: 10,
-    minDeaths: 5, // the guaranteed sink must actually function
+    maxTotal: 560, // start is ~156; readable worlds settle well under this
+    crowdAbortFrac: 0.82, // abort a candidate sustained this far above maxTotal
+    crowdAbortSecs: 4,
+    minContactEvents: 6, // over the (shorter) gate window
+    minDeaths: 3, // the guaranteed sink must actually function
     minMovingFraction: 0.12, // ≥12% of dots in visible motion (speed > 8)
     movingSpeed: 8,
-    maxAttempts: 30,
-    relaxAfter: 12, // late attempts lower the bar so generation terminates
-    transient: 45, // settling seconds excluded from mean-population stats
-    nullMaxPerSpecies: 400, // hard physics bounds over the full horizon
-    nullMaxTotal: 800,
+    maxAttempts: 24,
+    relaxAfter: 10, // late attempts lower the bar so generation terminates fast
+    transient: 18, // settling seconds excluded from mean-population stats
+    nullMaxPerSpecies: 300, // hard physics bounds over the full horizon
+    nullMaxTotal: 640,
   },
 
   // economy — pipeline: fair = base · clamp(scarcity); EMA tracks fair;

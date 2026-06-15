@@ -8,6 +8,7 @@ export interface PanelHooks {
   onEngage: () => void
   onRetry: () => void
   onNew: () => void
+  onLoadSeed: (hex: string) => void
 }
 
 function el<T extends HTMLElement>(id: string): T {
@@ -40,10 +41,38 @@ export class Panels {
     this.game = game
     this.renderedLog = 0
     this.logLines.innerHTML = ''
-    this.protocolId.textContent = `0x${seedToHex(game.session.seed)}`
+    const hex = seedToHex(game.session.seed)
+    this.protocolId.textContent = `0x${hex}`
+    this.protocolId.onclick = () => {
+      void navigator.clipboard?.writeText(hex).catch(() => {})
+      this.protocolId.classList.add('copied')
+      setTimeout(() => this.protocolId.classList.remove('copied'), 1200)
+    }
     this.glyphColor = new Map(game.species.map((s) => [s.glyph, s.color]))
     this.buildMarket()
     this.buildTools()
+  }
+
+  /** A "PROTOCOL [hex] LOAD" row — loading a seed reproduces the entire
+   * session (rules, objective, trajectory all derive from it). */
+  private seedLoadRow(currentHex: string): string {
+    return (
+      `<div class="seed-load">PROTOCOL ` +
+      `<input id="seed-input" maxlength="8" spellcheck="false" value="${currentHex}" />` +
+      `<button id="seed-load-btn">LOAD</button></div>`
+    )
+  }
+
+  private wireSeedLoad(): void {
+    const input = document.getElementById('seed-input') as HTMLInputElement | null
+    const btn = document.getElementById('seed-load-btn')
+    if (!input || !btn) return
+    const submit = () => this.hooks.onLoadSeed(input.value.trim())
+    btn.addEventListener('click', submit)
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation() // don't let tool/q/e/r/n keys fire while typing a seed
+      if (e.key === 'Enter') submit()
+    })
   }
 
   /** Wrap every species glyph in its color — keeps text scannable when the
@@ -343,8 +372,10 @@ export class Panels {
       `<div class="brief-row">OBJECTIVE — <b>${this.colorize(pText)}</b></div>` +
       `<div class="brief-row">CONSTRAINT — <b>${this.colorize(cText)}</b> (BREACH > ${o.graceSeconds}S = FAILURE)</div>` +
       `<div class="brief-row dim">FUNDS CR ${fmtCredits(CONFIG.startCredits)} · DEADLINE ${fmtClock(o.deadline)} · RUN ${game.run}</div>` +
-      `<button class="engage" id="engage-btn">ENGAGE</button>`
+      `<button class="engage" id="engage-btn">ENGAGE</button>` +
+      this.seedLoadRow(seedToHex(game.session.seed))
     el('engage-btn').addEventListener('click', this.hooks.onEngage)
+    this.wireSeedLoad()
   }
 
   debrief(result: GameResult, lawsKnown: number, lawsTotal: number): void {
@@ -358,9 +389,11 @@ export class Panels {
       `<div class="brief-row">${result.reason}</div>` +
       `<div class="brief-row dim">T${result.timeLeft > 0 ? '−' : '+'}${fmtClock(result.timeLeft).slice(2)} REMAINING · CR ${fmtCredits(result.credits)} · LAWS ${lawsKnown}/${lawsTotal} · RUN ${result.run}</div>` +
       `<button class="engage" id="retry-btn">R RETRY</button> ` +
-      `<button class="engage" id="new-btn">N NEW PROTOCOL</button>`
+      `<button class="engage" id="new-btn">N NEW PROTOCOL</button>` +
+      this.seedLoadRow(seedToHex(this.game.session.seed))
     el('retry-btn').addEventListener('click', this.hooks.onRetry)
     el('new-btn').addEventListener('click', this.hooks.onNew)
+    this.wireSeedLoad()
   }
 
   hideOverlay(): void {

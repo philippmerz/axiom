@@ -1,12 +1,14 @@
 import { CONFIG } from './core/config'
 import { Game } from './core/game'
 import { hexToSeed, randomSeed, seedToHex } from './core/rng'
-import { generateSessionAsync } from './core/rules'
+import { generateSession } from './core/rules'
 import { DossierRenderer } from './ui/dossier'
 import { FieldRenderer } from './ui/field'
+import { bindHelp } from './ui/help'
 import { bindInput } from './ui/input'
 import { Panels } from './ui/panels'
 import type { Session } from './core/types'
+import type { WorkerOut } from './worker'
 
 function el<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T
@@ -14,17 +16,44 @@ function el<T extends HTMLElement>(id: string): T {
 
 let game: Game | null = null
 let booting = false
+let bootToken = 0
 const sessionCache = new Map<number, Session>() // R-retry must not re-run validation
 const debriefed = new WeakSet<Game>()
 
+/** Generate a session off the main thread. Falls back to synchronous
+ * generation if Workers are unavailable. */
+function generateAsync(seed: number, onAttempt: (n: number) => void): Promise<Session> {
+  if (typeof Worker === 'undefined') {
+    return Promise.resolve(generateSession(seed, onAttempt))
+  }
+  return new Promise((resolve) => {
+    const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
+    worker.onmessage = (e: MessageEvent<WorkerOut>) => {
+      if (e.data.type === 'progress') onAttempt(e.data.attempt)
+      else {
+        worker.terminate()
+        resolve(e.data.session)
+      }
+    }
+    worker.postMessage({ seed })
+  })
+}
+
 const field = new FieldRenderer(el('field'), el('overlay-canvas'))
 const dossier = new DossierRenderer(el('dossier-canvas'), el('dossier-legend'))
-const panels = new Panels({ onEngage: engage, onRetry: retry, onNew: fresh })
+const panels = new Panels({ onEngage: engage, onRetry: retry, onNew: fresh, onLoadSeed: loadSeed })
 const drag = bindInput(() => game, el('field-stack'), {
   onEngage: engage,
   onRetry: retry,
   onNew: fresh,
 })
+bindHelp()
+
+function loadSeed(hex: string): void {
+  const seed = hexToSeed(hex)
+  if (seed === null || booting) return
+  void boot(seed)
+}
 
 function bumpRun(seed: number): number {
   const key = `axiom-run-${seedToHex(seed)}`
@@ -36,11 +65,15 @@ function bumpRun(seed: number): number {
 async function boot(seed: number): Promise<void> {
   if (booting) return
   booting = true
+  const token = ++bootToken
   game = null
   panels.generating(seed, 0)
   let session = sessionCache.get(seed)
   if (!session) {
-    session = await generateSessionAsync(seed, (attempt) => panels.generating(seed, attempt))
+    session = await generateAsync(seed, (attempt) => {
+      if (token === bootToken) panels.generating(seed, attempt)
+    })
+    if (token !== bootToken) return // superseded by a newer boot
     sessionCache.set(seed, session)
   }
   history.replaceState(null, '', `#${seedToHex(seed)}`)
@@ -103,6 +136,15 @@ function frame(now: number): void {
     }
   }
   requestAnimationFrame(frame)
+}
+
+// debug handle for the headless playtest harness (harmless in prod)
+;(window as unknown as { __axiom: unknown }).__axiom = {
+  get game() {
+    return game
+  },
+  engage,
+  loadSeed,
 }
 
 void boot(hexToSeed(location.hash.slice(1)) ?? randomSeed())

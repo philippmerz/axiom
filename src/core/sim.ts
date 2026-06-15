@@ -73,6 +73,40 @@ function lifeScale(id: number): number {
   return 0.8 + 0.4 * (x - Math.floor(x))
 }
 
+/** Dense flat-array spatial grid over the fixed field. Buckets are reused
+ * across frames (cleared by length=0) to avoid GC, and indexed by cell —
+ * no hashing. Iteration order is cell-major then insertion order, which is
+ * dots-array order, so it stays deterministic. */
+class Grid {
+  readonly cols: number
+  private readonly buckets: Dot[][]
+
+  constructor(readonly cell: number) {
+    this.cols = Math.ceil(CONFIG.fieldSize / cell) + 1
+    this.buckets = Array.from({ length: this.cols * this.cols }, () => [])
+  }
+
+  private idx(x: number, y: number): number {
+    let cx = (x / this.cell) | 0
+    let cy = (y / this.cell) | 0
+    if (cx < 0) cx = 0
+    else if (cx >= this.cols) cx = this.cols - 1
+    if (cy < 0) cy = 0
+    else if (cy >= this.cols) cy = this.cols - 1
+    return cy * this.cols + cx
+  }
+
+  rebuild(dots: Dot[]): void {
+    for (const b of this.buckets) b.length = 0
+    for (const d of dots) (this.buckets[this.idx(d.x, d.y)] as Dot[]).push(d)
+  }
+
+  bucket(cx: number, cy: number): Dot[] | null {
+    if (cx < 0 || cy < 0 || cx >= this.cols || cy >= this.cols) return null
+    return this.buckets[cy * this.cols + cx] as Dot[]
+  }
+}
+
 /** Force ramp: zero at REPULSE_RANGE and at r, peaking midway. */
 function ramp(dist: number, r: number): number {
   if (dist >= r) return 0
@@ -84,13 +118,15 @@ export class Sim {
   private readonly c: Compiled
   private readonly rng: Rng
   /** Coarse grid sized for force queries, fine grid for contact-scale ones. */
-  private readonly grid = new Map<number, Dot[]>()
-  private readonly fineGrid = new Map<number, Dot[]>()
+  private readonly grid: Grid
+  private readonly fineGrid: Grid
   private readonly gateScratch: Int32Array
 
   constructor(readonly ruleset: Ruleset, rng: Rng) {
     this.rng = rng
     this.c = compile(ruleset)
+    this.grid = new Grid(this.c.cellSize)
+    this.fineGrid = new Grid(FINE_CELL)
     this.gateScratch = new Int32Array(this.c.k)
     this.world = {
       time: 0,
@@ -129,39 +165,23 @@ export class Sim {
     }
   }
 
-  // ---- spatial hash ----
-
-  private cellKey(cx: number, cy: number): number {
-    return cx * 2048 + cy
-  }
+  // ---- spatial grids ----
 
   private buildGrid(): void {
-    this.grid.clear()
-    this.fineGrid.clear()
-    const cs = this.c.cellSize
-    for (const d of this.world.dots) {
-      const key = this.cellKey(Math.floor(d.x / cs), Math.floor(d.y / cs))
-      const cell = this.grid.get(key)
-      if (cell) cell.push(d)
-      else this.grid.set(key, [d])
-      const fkey = this.cellKey(Math.floor(d.x / FINE_CELL), Math.floor(d.y / FINE_CELL))
-      const fcell = this.fineGrid.get(fkey)
-      if (fcell) fcell.push(d)
-      else this.fineGrid.set(fkey, [d])
-    }
+    this.grid.rebuild(this.world.dots)
+    this.fineGrid.rebuild(this.world.dots)
   }
 
   private forEachNeighbor(x: number, y: number, r: number, fn: (other: Dot) => void): void {
-    const fine = r <= 100
-    const cs = fine ? FINE_CELL : this.c.cellSize
-    const grid = fine ? this.fineGrid : this.grid
+    const grid = r <= 100 ? this.fineGrid : this.grid
+    const cs = grid.cell
     const reach = Math.ceil(r / cs)
-    const cx = Math.floor(x / cs)
-    const cy = Math.floor(y / cs)
+    const cx = (x / cs) | 0
+    const cy = (y / cs) | 0
     const r2 = r * r
     for (let gx = cx - reach; gx <= cx + reach; gx++) {
       for (let gy = cy - reach; gy <= cy + reach; gy++) {
-        const cell = grid.get(this.cellKey(gx, gy))
+        const cell = grid.bucket(gx, gy)
         if (!cell) continue
         for (const o of cell) {
           const dx = o.x - x
@@ -213,15 +233,15 @@ export class Sim {
         gateSpecies[i] === -1 || (gates !== null && gates[gateSpecies[i] as number]! >= (gateCount[i] as number))
 
       // inlined neighbor walk — this is the hottest loop in the game
-      const cs = this.c.cellSize
+      const cs = this.grid.cell
       const maxR = this.c.rowMaxRadius[d.species] as number
       const maxR2 = maxR * maxR
       const reach = Math.ceil(maxR / cs)
-      const cx = Math.floor(d.x / cs)
-      const cy = Math.floor(d.y / cs)
+      const cx = (d.x / cs) | 0
+      const cy = (d.y / cs) | 0
       for (let gx = cx - reach; gx <= cx + reach; gx++) {
         for (let gy = cy - reach; gy <= cy + reach; gy++) {
-          const cell = this.grid.get(gx * 2048 + gy)
+          const cell = this.grid.bucket(gx, gy)
           if (!cell) continue
           for (const o of cell) {
             if (o === d) continue

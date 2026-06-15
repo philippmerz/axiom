@@ -310,6 +310,7 @@ function runValidation(sim: Sim, relax: boolean): BurninStats | null {
   const totalSteps = Math.round(CONFIG.deadline / CONFIG.dt)
 
   let zeroStreak = 0
+  let crowdStreak = 0
   for (let i = 0; i < totalSteps; i++) {
     sim.step()
     stats.afterStep()
@@ -317,9 +318,14 @@ function runValidation(sim: Sim, relax: boolean): BurninStats | null {
     stats.sample(sim.world.time)
     const total = sim.world.dots.length
     if (i < gateSteps) {
-      // cheap early aborts inside the gate window
-      if (sim.world.counts.some((c) => c > b.maxPerSpecies * 1.5)) return null
-      if (total > b.maxTotal * 1.15) return null
+      // cheap early aborts inside the gate window. The expensive reject is a
+      // slow grower creeping toward the cap: it survives the loose bounds for
+      // 60s while every step gets slower, so abort it the moment it's clearly
+      // not settling under the gate ceiling.
+      if (sim.world.counts.some((c) => c > b.maxPerSpecies)) return null
+      if (total > b.maxTotal) return null
+      crowdStreak = total > b.maxTotal * b.crowdAbortFrac ? crowdStreak + 1 : 0
+      if (crowdStreak > b.crowdAbortSecs) return null // sustained near cap = grower
       if (i > 20 * perSec && total < 10) return null // dead world
       // a species extinct for 10s straight is not coming back
       zeroStreak = sim.world.counts.some((c) => c === 0) ? zeroStreak + 1 : 0
@@ -406,25 +412,13 @@ function fallbackSession(root: Rng): Session {
   }
 }
 
-export function generateSession(seed: number): Session {
-  const root = new Rng(seed)
-  for (let attempt = 0; attempt < CONFIG.burnin.maxAttempts; attempt++) {
-    const session = attemptOnce(root, attempt)
-    if (session) return { ...session, seed }
-  }
-  return { ...fallbackSession(root), seed }
-}
-
-/** Browser variant: yields to the event loop between attempts so the
- * GENERATING overlay can animate instead of freezing the tab. */
-export async function generateSessionAsync(
-  seed: number,
-  onAttempt?: (attempt: number) => void,
-): Promise<Session> {
+/** Synchronous and deterministic: the same seed always yields the same
+ * session. In the browser this runs inside a Web Worker (see worker.ts) so
+ * the validation sims never block the UI; onAttempt streams progress out. */
+export function generateSession(seed: number, onAttempt?: (attempt: number) => void): Session {
   const root = new Rng(seed)
   for (let attempt = 0; attempt < CONFIG.burnin.maxAttempts; attempt++) {
     onAttempt?.(attempt)
-    await new Promise((r) => setTimeout(r, 0))
     const session = attemptOnce(root, attempt)
     if (session) return { ...session, seed }
   }

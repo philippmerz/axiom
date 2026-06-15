@@ -86,9 +86,28 @@ body {
   color: var(--text-bright);
   letter-spacing: 0.22em;
   font-size: 12px;
+  display: flex;
+  align-items: center;
 }
 
-#protocol-id { color: var(--accent); }
+#protocol-id { color: var(--accent); cursor: pointer; }
+#protocol-id:hover { text-decoration: underline; }
+#protocol-id.copied::after { content: ' COPIED'; color: var(--ok); letter-spacing: 0.1em; }
+
+#help-btn {
+  margin-left: auto;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--hairline);
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+}
+#help-btn:hover { color: var(--accent); border-color: #1d3a42; }
 
 #status-line {
   display: flex;
@@ -264,3 +283,104 @@ body {
 }
 
 #overlay-card .engage:hover { background: #0a1216; }
+
+/* ---- seed load ---- */
+
+.seed-load {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  letter-spacing: 0.06em;
+}
+
+.seed-load input {
+  flex: 1;
+  background: #04060a;
+  border: 1px solid var(--hairline);
+  color: var(--accent);
+  font: inherit;
+  letter-spacing: 0.14em;
+  padding: 6px 8px;
+  text-transform: uppercase;
+}
+
+.seed-load input:focus { outline: none; border-color: #1d3a42; }
+
+.seed-load button {
+  border: 1px solid var(--hairline);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  letter-spacing: 0.16em;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.seed-load button:hover { color: var(--accent); border-color: #1d3a42; }
+
+/* ---- help / field manual ---- */
+
+#help {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 4, 6, 0.82);
+  display: grid;
+  place-items: center;
+  z-index: 20;
+}
+
+#help.hidden { display: none; }
+
+#help-card {
+  position: relative;
+  width: 560px;
+  max-height: 86vh;
+  overflow-y: auto;
+  border: 1px solid var(--hairline);
+  background: var(--panel);
+  padding: 26px 32px 30px;
+  letter-spacing: 0.04em;
+  scrollbar-width: thin;
+}
+
+#help-card h1 {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.3em;
+  color: var(--text-bright);
+  margin-bottom: 14px;
+}
+
+#help-card h2 {
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.3em;
+  color: var(--text-dim);
+  margin: 16px 0 6px;
+}
+
+#help-card p {
+  font-size: 11px;
+  line-height: 1.85;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+#help-card b { color: var(--text-bright); font-weight: 400; }
+#help-card i { color: var(--text); font-style: normal; text-decoration: underline dotted #3d4854; }
+#help-card .accent { color: var(--accent); }
+
+#help-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#help-close:hover { color: var(--text-bright); }

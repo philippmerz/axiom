@@ -20,7 +20,10 @@
     </main>
     <aside id="rail">
       <header id="rail-header">
-        <div id="title-line">AXIOM <span class="dim">//</span> <span id="protocol-id"></span></div>
+        <div id="title-line">
+          AXIOM <span class="dim">//</span> <span id="protocol-id" title="click to copy seed"></span>
+          <button id="help-btn" title="instructions (hold ? )">?</button>
+        </div>
         <div id="status-line">
           <span id="clock"></span>
           <span id="credits"></span>
@@ -50,6 +53,49 @@
     </aside>
     <div id="overlay" class="hidden">
       <div id="overlay-card"></div>
+    </div>
+    <div id="help" class="hidden">
+      <div id="help-card">
+        <button id="help-close" title="close">✕</button>
+        <h1>AXIOM <span class="dim">// FIELD MANUAL</span></h1>
+        <p>Each protocol generates an alien physics from scratch: 5–6 entity
+        classes (colored dots) bound by hidden laws — forces, contact
+        reactions, and lifecycles. <b>Every law is unknown at start.</b> Read
+        the motion, infer the laws, exploit them to hit the
+        <span class="accent">objective</span> before the deadline without
+        breaching the <span class="accent">constraint</span>.</p>
+
+        <h2>READING THE FIELD</h2>
+        <p>Dots attract, flee, chase, orbit. On contact they may consume,
+        convert, fuse, or emit. Some self-replicate or decay. A
+        <b>dimmed</b> dot is in its post-reaction cooldown. Events flash a ring
+        at the contact point.</p>
+
+        <h2>LEARNING — you learn what you watch</h2>
+        <p>Contact &amp; lifecycle laws confirm into the <b>DOSSIER</b> after
+        you witness them <b>3×</b> inside the ring around your cursor. Force
+        laws reveal through <b>ECHO</b> experiments, or buy any law with
+        <b>SCAN</b>.</p>
+
+        <h2>TOOLS <span class="dim">(keys 1–4)</span></h2>
+        <p><b>1 DEPLOY</b> — buy one dot of the selected class at ask, place it.
+        Repeated buys of one class get pricier.<br />
+        <b>2 EXTRACT</b> — sell the nearest dot at bid (1.5s cooldown; cursor
+        ticks re-converge as it recharges).<br />
+        <b>3 ECHO</b> — a phantom dot of the selected class; nearby dots react
+        through the <i>hidden</i> force law, so it both herds and teaches.
+        ⇧-click = plain repulsor.<br />
+        <b>4 SCAN</b> — click a dot for its lifecycle; drag dot→dot for the pair
+        law. Cost escalates per scan.</p>
+
+        <h2>KEYS</h2>
+        <p><b>Q / E</b> select class · <b>SPACE</b> pause (observation only —
+        tools off) · <b>R</b> retry seed · <b>N</b> new protocol ·
+        <b>?</b> hold for this manual</p>
+
+        <p class="dim">Protocols are seeded. Share the <span class="accent">0x…</span>
+        hash to hand someone the exact same universe.</p>
+      </div>
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>
